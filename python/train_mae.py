@@ -7,6 +7,7 @@ import math
 import os
 import time
 import cv2
+import random
 
 
 from torch.utils.data import DataLoader
@@ -31,21 +32,51 @@ from dataset.maedataset import MAEDataset
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 
+def inner_init(m):
+    if isinstance(m, (nn.Conv2d, nn.ConvTranspose2d)):
+        # CNN 계열은 truncated normal로 초기화 (std=0.02)
+        torch.nn.init.trunc_normal_(m.weight, std=.02)
+        if m.bias is not None:
+            nn.init.constant_(m.bias, 0)
+    elif isinstance(m, (nn.LayerNorm, nn.BatchNorm2d)):
+        # Normalization 계열은 weight 1, bias 0
+        nn.init.constant_(m.bias, 0)
+        nn.init.constant_(m.weight, 1.0)
+
+def model_init(model):
+    # 1. 일반 레이어 초기화 (Apply 함수 사용)
+    model.apply(inner_init)
+    
+    # 2. Mask Tokens 및 GRN 파라미터 개별 초기화
+    for name, m in model.named_modules():
+        if hasattr(m, 'gamma'): # GRN의 gamma 초기화
+            nn.init.constant_(m.gamma, 0)
+        if hasattr(m, 'beta'): # GRN의 beta 초기화
+            nn.init.constant_(m.beta, 0)
+            
+    # 3. Unet_MAE 전용: mask_tokens 초기화
+    if hasattr(model, 'mask_tokens'):
+        for p in model.mask_tokens:
+            # 0으로 시작해도 되지만, 작은 랜덤값(0.02)이 학습 초기에 더 유리합니다.
+            torch.nn.init.trunc_normal_(p, std=.02)
+
+
 
 ## Hyper Parameter
 epochs = 3000
 in_channels = 1
-global_size=1024
-batch_size=5
-patch_drop_prob = 0.60
-grid_size = global_size // 4
+global_size=2048
+batch_size=1
+patch_drop_prob = 0.3
+grid_options = [4, 8, 16, 24, 32, 36, 40, 44, 48, 52, 56, 60, 64, 68]
+
 
 lr=1e-3
 weight_decay=1e-5
 
 
 save_dir = r'C:\github\maestudy\weights'
-dataset_dir = r"C:\github\dataset\dino_test"
+dataset_dir = r"C:\github\dataset\dino_test2"
 ## Hyper Parameter
 
 
@@ -55,6 +86,8 @@ encoder_backbone_mae = convnextv2_mae_atto(in_channels=in_channels).to(device)
 decoder = Decoder(out_channels=in_channels).to(device)
 unet = Unet_MAE(encoder=encoder_backbone_mae,
                 decoder=decoder).to(device)
+
+model_init(unet)
 
 #encoder_backbone_normal.train()
 encoder_backbone_mae.train()
@@ -105,6 +138,11 @@ for epoch in range(epochs):
         global_mask_crops = global_crops.clone()
         
         b, _, h, w = global_crops.shape
+
+        
+        current_grid = random.choice(grid_options)
+
+        grid_size = global_size // current_grid
         make_cur_active(b, grid_size, grid_size, patch_drop_prob, device)
         mask = _get_active_ex_or_ii(h, w, returning_active_ex=True)
         global_mask_crops *= mask
