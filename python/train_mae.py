@@ -27,6 +27,7 @@ from model.decoder import Decoder
 from model.unet_mae import Unet_MAE
 
 from dataset.maedataset import MAEDataset
+from dataset.maedataset2 import MAEDataset2
 
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -63,27 +64,30 @@ def model_init(model):
 
 
 ## Hyper Parameter
-epochs = 3000
+epochs = 3000000
 in_channels = 1
-global_size=2048
-batch_size=1
-patch_drop_prob = 0.3
-grid_options = [4, 8, 16, 24, 32, 36, 40, 44, 48, 52, 56, 60, 64, 68]
+global_size=512
+batch_size=3
+patch_drop_prob = 0.65
+grid_options = [4]
 
 
-lr=1e-3
+lr=1e-4
 weight_decay=1e-5
 
 
 save_dir = r'C:\github\maestudy\weights'
-dataset_dir = r"C:\github\dataset\dino_test2"
+dataset_dir = r"C:\github\dataset\dino_test3"
 ## Hyper Parameter
 
 
 
 encoder_backbone_normal = convnextv2_atto(in_channels=in_channels).to(device)
 encoder_backbone_mae = convnextv2_mae_atto(in_channels=in_channels).to(device)
-decoder = Decoder(out_channels=in_channels).to(device)
+
+decoder_dims = list(reversed(encoder_backbone_mae.dims))
+decoder = Decoder(out_channels=in_channels,
+                  embed_dims=decoder_dims).to(device)
 unet = Unet_MAE(encoder=encoder_backbone_mae,
                 decoder=decoder).to(device)
 
@@ -98,9 +102,9 @@ unet.train()
 copy_weights_ignore_name(encoder_backbone_mae, encoder_backbone_normal)
 
 
-dataset = MAEDataset(root_dir=dataset_dir,
-                     global_size=global_size,
-                     global_scale_aug=(0.95, 1.05))
+dataset = MAEDataset2(root_dir=dataset_dir,
+                      global_size=global_size,
+                      global_scale_aug=(0.95, 1.05))
 
 loader = DataLoader(
     dataset,
@@ -112,7 +116,7 @@ loader = DataLoader(
 
 
 
-optimizer = Adam(unet.parameters(), lr=lr, weight_decay=weight_decay)
+optimizer = RAdam(unet.parameters(), lr=lr, weight_decay=weight_decay)
 
 
 
@@ -188,16 +192,7 @@ for epoch in range(epochs):
 
 
 
-
-
-
-
-
-
-
-
-
-
+cv2.waitKey()
 
 
 
